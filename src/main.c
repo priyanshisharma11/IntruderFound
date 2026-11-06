@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "editor.h"
 
 struct Node
 {
@@ -494,6 +495,32 @@ int main()
 	else if (strcmp(command, "echo") == 0)
 	{
 	    process_echo(current_dir, input);
+	}
+	else if (strcmp(command, "vi") == 0)
+	{
+		if (!valid_name(argument))
+    		{
+        		printf("vi: invalid filename\n");
+    		}
+    		else
+    		{
+        		Node *file = find_child(current_dir, argument);
+
+        		if (file != NULL && file->is_directory)
+        		{
+            			printf("vi: cannot edit a directory\n");
+        		}
+        		else
+        		{
+            			if (file == NULL)
+           			{
+					file = create_node(argument, 0);
+                			add_child(current_dir, file);
+           			}
+
+           			open_editor(file->content, sizeof(file->content), file->name);
+        		}
+    		}
 	}
         else
         {
