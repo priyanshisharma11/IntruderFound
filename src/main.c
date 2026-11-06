@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "editor.h"
+#include "logger.h"
 
 struct Node
 {
@@ -336,6 +337,7 @@ int main()
 
     add_child(downloads, image);
 
+    logger_start();
 
     printf("====================================\n");
     printf("       INTRUDFOUND DECOY SHELL\n");
@@ -364,6 +366,7 @@ int main()
 
         if (fgets(input, sizeof(input), stdin) == NULL)
         {
+	    logger_end();
             printf("\nSession ended.\n");
             break;
         }
@@ -381,8 +384,11 @@ int main()
             continue;
         }
 
-        else if (strcmp(command, "exit") == 0)
+	logger_log("COMMAND", input);
+
+        if (strcmp(command, "exit") == 0)
         {
+	    logger_end();
             printf("Session ended.\n");
             break;
         }
