@@ -1,0 +1,15 @@
+# Compiled programs
+intruderfound
+*.o
+*.out
+
+# Generated logs
+logs/*.log
+
+# Generated reports
+reports/*.log
+reports/*.html
+
+# Temporary files
+*.tmp
+
