@@ -130,6 +130,163 @@ int valid_name(char name[])
     return 1;
 }
 
+// Remove unnecessary spaces from the beginning and end
+void trim_spaces(char text[])
+{
+    int start = 0;
+    int end = strlen(text) - 1;
+
+    while (text[start] == ' ' || text[start] == '\t')
+    {
+        start++;
+    }
+
+    while (end >= start &&
+           (text[end] == ' ' || text[end] == '\t'))
+    {
+        text[end] = '\0';
+        end--;
+    }
+
+    if (start > 0)
+    {
+        memmove(text, text + start, strlen(text + start) + 1);
+    }
+}
+
+
+// Process echo and simulated redirection
+void process_echo(Node *current_dir, char input[])
+{
+    char text[256];
+    char filename[64];
+    char *redirect;
+    char *content_start;
+
+    int append = 0;
+
+    // Skip the word "echo "
+    content_start = input + 4;
+
+    while (*content_start == ' ')
+    {
+        content_start++;
+    }
+
+    // Check for append operator >>
+    redirect = strstr(content_start, ">>");
+
+    if (redirect != NULL)
+    {
+        append = 1;
+    }
+    else
+    {
+        // Check for overwrite operator >
+        redirect = strchr(content_start, '>');
+    }
+
+    if (redirect == NULL)
+    {
+        snprintf(text, sizeof(text), "%s", content_start);
+        trim_spaces(text);
+
+        int len = strlen(text);
+
+        if (len >= 2 && text[0] == '"' && text[len - 1] == '"')
+        {
+            memmove(text, text + 1, len - 2);
+            text[len - 2] = '\0';
+        }
+
+        printf("%s\n", text);
+        return;
+    }
+
+    // Extract text before the redirection operator
+    int text_length = redirect - content_start;
+
+    if (text_length >= (int)sizeof(text))
+    {
+        printf("echo: text is too long\n");
+        return;
+    }
+
+    strncpy(text, content_start, text_length);
+    text[text_length] = '\0';
+
+    trim_spaces(text);
+
+    // Remove surrounding double quotes
+    int len = strlen(text);
+
+    if (len >= 2 && text[0] == '"' && text[len - 1] == '"')
+    {
+        memmove(text, text + 1, len - 2);
+        text[len - 2] = '\0';
+    }
+
+    // Get destination filename
+    char *filename_start = redirect + (append ? 2 : 1);
+
+    while (*filename_start == ' ')
+    {
+        filename_start++;
+    }
+
+    if (sscanf(filename_start, "%63s", filename) != 1 ||
+        !valid_name(filename))
+    {
+        printf("echo: invalid filename\n");
+        return;
+    }
+
+    // Find existing file or create a new one
+    Node *file = find_child(current_dir, filename);
+
+    if (file != NULL && file->is_directory)
+    {
+        printf("echo: cannot write to a directory\n");
+        return;
+    }
+
+    if (file == NULL)
+    {
+        file = create_node(filename, 0);
+        add_child(current_dir, file);
+    }
+
+    // Write or append content
+    int current_length = strlen(file->content);
+    int text_length_new = strlen(text);
+
+    if (current_length + text_length_new + 2 >
+        (int)sizeof(file->content))
+    {
+        printf("echo: file content limit exceeded\n");
+        return;
+    }
+
+    if (append)
+    {
+        if (current_length > 0)
+        {
+            file->content[current_length] = '\n';
+            current_length++;
+        }
+
+        strcpy(file->content + current_length, text);
+    }
+    else
+    {
+        strcpy(file->content, text);
+    }
+
+    // Echo normally adds a newline
+    strcat(file->content, "\n");
+
+    printf("Content written successfully.\n");
+}
 
 int main()
 {
@@ -334,6 +491,10 @@ int main()
             }
         }
 
+	else if (strcmp(command, "echo") == 0)
+	{
+	    process_echo(current_dir, input);
+	}
         else
         {
             printf("%s: command not found\n", command);
