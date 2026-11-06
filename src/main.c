@@ -1,13 +1,183 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+struct Node
+{
+    char name[64];
+    char content[512];
+
+    int is_directory;
+
+    struct Node *parent;
+    struct Node *children;
+    struct Node *next;
+};
+
+typedef struct Node Node;
+
+Node *create_node(char name[], int is_directory)
+{
+    Node *new_node = malloc(sizeof(Node));
+
+    if (new_node == NULL)
+    {
+        printf("Memory allocation failed.\n");
+        exit(1);
+    }
+
+    strcpy(new_node->name, name);
+    new_node->content[0] = '\0';
+    new_node->is_directory = is_directory;
+
+    new_node->parent = NULL;
+    new_node->children = NULL;
+    new_node->next = NULL;
+
+    return new_node;
+}
+
+
+Node *find_child(Node *directory, char name[])
+{
+    Node *temp = directory->children;
+
+    while (temp != NULL)
+    {
+        if (strcmp(temp->name, name) == 0)
+        {
+            return temp;
+        }
+
+        temp = temp->next;
+    }
+
+    return NULL;
+}
+
+
+void add_child(Node *parent, Node *child)
+{
+    child->parent = parent;
+
+    if (parent->children == NULL)
+    {
+        parent->children = child;
+    }
+    else
+    {
+        Node *temp = parent->children;
+
+        while (temp->next != NULL)
+        {
+            temp = temp->next;
+        }
+
+        temp->next = child;
+    }
+}
+
+
+void print_path(Node *directory)
+{
+    if (directory->parent != NULL)
+    {
+        print_path(directory->parent);
+    }
+
+    printf("/%s", directory->name);
+}
+
+
+void list_directory(Node *directory)
+{
+    Node *temp = directory->children;
+
+    if (temp == NULL)
+    {
+        printf("Directory is empty.\n");
+        return;
+    }
+
+    while (temp != NULL)
+    {
+        printf("%s", temp->name);
+
+        if (temp->is_directory)
+        {
+            printf("/");
+        }
+
+        printf("  ");
+
+        temp = temp->next;
+    }
+
+    printf("\n");
+}
+
+
+int valid_name(char name[])
+{
+    if (name[0] == '\0' ||
+        strcmp(name, ".") == 0 ||
+        strcmp(name, "..") == 0 ||
+        strchr(name, '/') != NULL)
+    {
+        return 0;
+    }
+
+    return 1;
+}
+
 
 int main()
 {
     char input[256];
     char command[32];
-    char argument[128];
+    char argument[64];
 
-    char current_dir[128] = "/home/intruder";
+    // Create home directory
+    Node *root = create_node("home", 1);
+    Node *user = create_node("intruder", 1);
+
+    add_child(root, user);
+
+    Node *current_dir = user;
+
+    // Create initial virtual directories
+    Node *documents = create_node("Documents", 1);
+    Node *downloads = create_node("Downloads", 1);
+
+    add_child(user, documents);
+    add_child(user, downloads);
+
+    // Create initial virtual files
+    Node *secrets = create_node("secrets.txt", 0);
+    strcpy(secrets->content, "This is a confidential file.");
+
+    add_child(user, secrets);
+
+    Node *notes = create_node("notes.txt", 0);
+    strcpy(notes->content, "These are personal notes.");
+
+    add_child(documents, notes);
+
+    Node *assignment = create_node("assignment.txt", 0);
+    strcpy(assignment->content, "UNIX Programming Assignment");
+
+    add_child(documents, assignment);
+
+    Node *report = create_node("report.pdf", 0);
+    strcpy(report->content, "Simulated PDF report.");
+
+    add_child(downloads, report);
+
+    Node *image = create_node("image.jpg", 0);
+    strcpy(image->content, "Simulated image file.");
+
+    add_child(downloads, image);
+
 
     printf("====================================\n");
     printf("       INTRUDFOUND DECOY SHELL\n");
@@ -16,10 +186,23 @@ int main()
     printf("Welcome, intruder!\n");
     printf("Type help to see available commands.\n\n");
 
+
     while (1)
     {
-        printf("intruder@decoy:%s$ ", current_dir);
+        printf("intruder@decoy:");
+
+        if (current_dir == user)
+        {
+            printf("~");
+        }
+        else
+        {
+            print_path(current_dir);
+        }
+
+        printf("$ ");
         fflush(stdout);
+
 
         if (fgets(input, sizeof(input), stdin) == NULL)
         {
@@ -32,9 +215,15 @@ int main()
         command[0] = '\0';
         argument[0] = '\0';
 
-        sscanf(input, "%31s %127s", command, argument);
+        sscanf(input, "%31s %63s", command, argument);
 
-        if (strcmp(command, "exit") == 0)
+
+        if (input[0] == '\0')
+        {
+            continue;
+        }
+
+        else if (strcmp(command, "exit") == 0)
         {
             printf("Session ended.\n");
             break;
@@ -43,12 +232,7 @@ int main()
         else if (strcmp(command, "help") == 0)
         {
             printf("Available commands:\n");
-            printf("help, pwd, ls, whoami, cd, exit\n");
-        }
-
-        else if (strcmp(command, "pwd") == 0)
-        {
-            printf("%s\n", current_dir);
+            printf("help, pwd, ls, whoami, cd, mkdir, touch, cat, exit\n");
         }
 
         else if (strcmp(command, "whoami") == 0)
@@ -56,63 +240,98 @@ int main()
             printf("intruder\n");
         }
 
+        else if (strcmp(command, "pwd") == 0)
+        {
+            print_path(current_dir);
+            printf("\n");
+        }
+
         else if (strcmp(command, "ls") == 0)
         {
-            if (strcmp(current_dir, "/home/intruder") == 0)
-            {
-                printf("Documents  Downloads  secrets.txt\n");
-            }
-            else if (strcmp(current_dir, "/home/intruder/Documents") == 0)
-            {
-                printf("notes.txt  assignment.txt\n");
-            }
-            else if (strcmp(current_dir, "/home/intruder/Downloads") == 0)
-            {
-                printf("report.pdf  image.jpg\n");
-            }
+            list_directory(current_dir);
         }
 
         else if (strcmp(command, "cd") == 0)
         {
-            if (argument[0] == '\0')
+            if (argument[0] == '\0' || strcmp(argument, "~") == 0)
             {
-                strcpy(current_dir, "/home/intruder");
-            }
-
-            else if (strcmp(argument, "Documents") == 0 &&
-                     strcmp(current_dir, "/home/intruder") == 0)
-            {
-                strcat(current_dir, "/Documents");
-            }
-
-            else if (strcmp(argument, "Downloads") == 0 &&
-                     strcmp(current_dir, "/home/intruder") == 0)
-            {
-                strcat(current_dir, "/Downloads");
+                current_dir = user;
             }
 
             else if (strcmp(argument, "..") == 0)
             {
-                if (strcmp(current_dir, "/home/intruder/Documents") == 0 ||
-                    strcmp(current_dir, "/home/intruder/Downloads") == 0)
+                if (current_dir->parent != NULL &&
+                    current_dir->parent != root)
                 {
-                    strcpy(current_dir, "/home/intruder");
-                }
-                else
-                {
-                    printf("Already at home directory.\n");
+                    current_dir = current_dir->parent;
                 }
             }
 
             else
             {
-                printf("cd: directory not found\n");
+                Node *target = find_child(current_dir, argument);
+
+                if (target != NULL && target->is_directory)
+                {
+                    current_dir = target;
+                }
+                else
+                {
+                    printf("cd: directory not found\n");
+                }
             }
         }
 
-        else if (input[0] == '\0')
+        else if (strcmp(command, "mkdir") == 0)
         {
-            continue;
+            if (!valid_name(argument))
+            {
+                printf("mkdir: invalid directory name\n");
+            }
+            else if (find_child(current_dir, argument) != NULL)
+            {
+                printf("mkdir: directory or file already exists\n");
+            }
+            else
+            {
+                Node *new_dir = create_node(argument, 1);
+                add_child(current_dir, new_dir);
+
+                printf("Directory created successfully.\n");
+            }
+        }
+
+        else if (strcmp(command, "touch") == 0)
+        {
+            if (!valid_name(argument))
+            {
+                printf("touch: invalid file name\n");
+            }
+            else if (find_child(current_dir, argument) != NULL)
+            {
+                printf("touch: file already exists\n");
+            }
+            else
+            {
+                Node *new_file = create_node(argument, 0);
+                add_child(current_dir, new_file);
+
+                printf("File created successfully.\n");
+            }
+        }
+
+        else if (strcmp(command, "cat") == 0)
+        {
+            Node *file = find_child(current_dir, argument);
+
+            if (file == NULL || file->is_directory)
+            {
+                printf("cat: file not found\n");
+            }
+            else
+            {
+                printf("%s\n", file->content);
+            }
         }
 
         else
