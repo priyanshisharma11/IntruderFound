@@ -3,6 +3,7 @@
 #include <string.h>
 #include "editor.h"
 #include "logger.h"
+#include "security.h"
 
 struct Node
 {
@@ -385,6 +386,20 @@ int main()
         }
 
 	logger_log("COMMAND", input);
+
+	// Check for suspicious commands
+	const char *reason = detect_suspicious(input);
+
+	if (reason != NULL)
+	{
+		logger_log("SUSPICIOUS", reason);
+
+    		printf("\n[SECURITY ALERT] Suspicious command detected!\n");
+    		printf("Category: %s\n", reason);
+   		printf("Command blocked by IntruderFound.\n\n");
+
+   		continue;
+	}
 
         if (strcmp(command, "exit") == 0)
         {
