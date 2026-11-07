@@ -4,6 +4,7 @@
 #include "editor.h"
 #include "logger.h"
 #include "security.h"
+#include "signals.h"
 
 struct Node
 {
@@ -340,6 +341,12 @@ int main()
 
     logger_start();
 
+    if (setup_signal_handlers() == -1)
+    {
+    	logger_end();
+    	return 1;
+    }
+
     printf("====================================\n");
     printf("       INTRUDFOUND DECOY SHELL\n");
     printf("====================================\n");
@@ -366,11 +373,51 @@ int main()
 
 
         if (fgets(input, sizeof(input), stdin) == NULL)
-        {
-	    logger_end();
-            printf("\nSession ended.\n");
-            break;
-        }
+	{
+    		int received = consume_pending_signal();
+
+    		if (received != 0)
+    		{
+        		logger_log("SIGNAL", signal_description(received));
+
+        		printf("\n[SIGNAL DETECTED] %s\n",
+               		signal_description(received));
+
+        		if (received == SIGHUP)
+        		{
+            			logger_end();
+
+            			printf("Session closed due to hangup.\n");
+            			break;
+        		}
+
+        		clearerr(stdin);
+        		continue;
+    		}
+
+    		logger_end();
+
+    		printf("\nSession ended.\n");
+    		break;
+	}
+
+	int received = consume_pending_signal();
+
+	if (received != 0)
+	{
+    		logger_log("SIGNAL", signal_description(received));
+
+    		printf("\n[SIGNAL DETECTED] %s\n",
+           	signal_description(received));
+
+    		if (received == SIGHUP)
+    		{
+        		logger_end();
+
+        		printf("Session closed due to hangup.\n");
+        		break;
+    		}
+	}
 
         input[strcspn(input, "\n")] = '\0';
 
