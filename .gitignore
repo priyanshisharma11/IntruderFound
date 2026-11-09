@@ -13,3 +13,4 @@ reports/*.html
 # Temporary files
 *.tmp
 
+reports/*.txt
