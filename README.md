@@ -115,7 +115,7 @@ IntruderFound/
 ### Step 1: Clone the repository
 
 ```bash
-git clone <your-github-repository-link>
+git clone https://github.com/priyanshisharma11/IntruderFound.git
 ```
 
 ### Step 2: Enter the project directory
