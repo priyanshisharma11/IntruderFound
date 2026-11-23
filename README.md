@@ -144,10 +144,11 @@ After using the simulated shell, exit the session and run:
 make inspect
 ```
 
-The session analysis report will be generated at:
+The session analysis reports will be generated at:
 
 ```text
 reports/session_report.txt
+reports/session_report.md
 ```
 
 ### Step 6: Clean the compiled executable
@@ -159,36 +160,32 @@ make clean
 ## 7. Sample Execution
 
 ```text
-====================================
-       INTRUDFOUND DECOY SHELL
-====================================
-Welcome, intruder!
-Type help to see available commands.
+user123@srv-node01:~$ whoami
+user123
 
-intruder@decoy:~$ whoami
-intruder
+user123@srv-node01:~$ uname -a
+Linux srv-node01 5.15.0-89-generic #99-Ubuntu SMP Mon Oct 30 20:42:41 UTC 2023 x86_64 GNU/Linux
 
-intruder@decoy:~$ sudo apt install something
+user123@srv-node01:~$ sudo apt update
+[sudo] password for user123: 
+sudo: 3 incorrect password attempts
 
-[SECURITY ALERT] Suspicious command detected!
-Category: Privilege escalation attempt
-Command blocked by IntruderFound.
+user123@srv-node01:~$ rm -rf /
+rm: it is dangerous to operate recursively on '/'
+rm: use --no-preserve-root to override this failsafe
 
-intruder@decoy:~$ exit
-Session ended.
+user123@srv-node01:~$ cat /etc/shadow
+cat: /etc/shadow: Permission denied
+
+user123@srv-node01:~$ exit
+logout
 ```
 
-## 8. Expected Session Report
+## 8. Generated Forensic Reports
 
-The session inspector generates a report containing:
-
-- Total sessions
-- Total commands
-- Number of suspicious activities
-- Number of signal events
-- Suspicious activity details
-- Command frequency
-- Session details
+The session inspector pipeline leverages `grep`, `sed`, `awk`, and shell `trap` to generate:
+- `reports/session_report.txt`: Standard formatted text analysis.
+- `reports/session_report.md`: Structured Markdown table summary with session durations and threat events.
 
 ## 9. Security and Limitations
 

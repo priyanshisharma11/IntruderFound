@@ -6,4 +6,3 @@
 void open_editor(char *content, size_t capacity, const char *filename);
 
 #endif
-

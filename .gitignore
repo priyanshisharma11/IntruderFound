@@ -12,5 +12,7 @@ reports/*.html
 
 # Temporary files
 *.tmp
+.DS_Store
 
 reports/*.txt
+reports/*.md

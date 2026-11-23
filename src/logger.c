@@ -1,103 +1,174 @@
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <libgen.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
+
 #include "logger.h"
 
-FILE *log_file = NULL;
+static int log_fd = -1;
+static char session_id[64];
 
-char session_id[64];
-
-
-// Generate current timestamp
-void get_timestamp(char timestamp[])
+// Resolve absolute path to <project_dir>/logs/session.log relative to the binary
+static void get_log_file_path(char *path_out, size_t size)
 {
-    time_t current_time = time(NULL);
+    char exe_path[1024] = {0};
+    int found = 0;
 
-    struct tm *time_info = localtime(&current_time);
+#if defined(__APPLE__)
+    uint32_t buf_size = sizeof(exe_path);
+    if (_NSGetExecutablePath(exe_path, &buf_size) == 0)
+    {
+        found = 1;
+    }
+#elif defined(__linux__)
+    ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+    if (len != -1)
+    {
+        exe_path[len] = '\0';
+        found = 1;
+    }
+#endif
 
-    strftime(timestamp, 32, "%Y-%m-%d %H:%M:%S", time_info);
+    if (found)
+    {
+        char *dir = dirname(exe_path);
+        char log_dir[1024];
+        snprintf(log_dir, sizeof(log_dir), "%s/logs", dir);
+        mkdir(log_dir, 0755);
+        snprintf(path_out, size, "%s/logs/session.log", dir);
+    }
+    else
+    {
+        mkdir("logs", 0755);
+        snprintf(path_out, size, "logs/session.log");
+    }
 }
 
+// Generate current timestamp (ISO-like: YYYY-MM-DD HH:MM:SS)
+static void get_timestamp(char timestamp[], size_t size)
+{
+    time_t current_time = time(NULL);
+    struct tm *time_info = localtime(&current_time);
+    strftime(timestamp, size, "%Y-%m-%d %H:%M:%S", time_info);
+}
 
-// Start a new session
+// Start a new session using low-level POSIX file descriptors
 void logger_start(void)
 {
     char timestamp[32];
+    char entry[256];
+    char log_path[1024];
 
-    log_file = fopen("logs/session.log", "a");
+    get_log_file_path(log_path, sizeof(log_path));
 
-    if (log_file == NULL)
+    // POSIX open: append-only, create if not present
+    log_fd = open(log_path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (log_fd == -1)
     {
-        perror("Unable to open session log");
+        perror("logger: open(session.log) failed");
         return;
     }
 
-    get_timestamp(timestamp);
+    get_timestamp(timestamp, sizeof(timestamp));
 
-    // Generate unique session ID using time and process ID
-    snprintf(session_id, sizeof(session_id),
-             "%s_%ld", timestamp, (long)getpid());
+    // Unique session ID: YYYYMMDD_HHMMSS_PID (no spaces)
+    char ts_nospace[32];
+    size_t k = 0;
+    for (size_t j = 0; timestamp[j] != '\0' && k < sizeof(ts_nospace) - 1; j++)
+    {
+        if (timestamp[j] == ' ' || timestamp[j] == '-' || timestamp[j] == ':')
+        {
+            ts_nospace[k++] = '_';
+        }
+        else
+        {
+            ts_nospace[k++] = timestamp[j];
+        }
+    }
+    ts_nospace[k] = '\0';
 
-    fprintf(log_file,
-            "%s|%s|SESSION_START|Decoy shell started\n",
-            timestamp, session_id);
+    snprintf(session_id, sizeof(session_id), "%s_%ld", ts_nospace, (long)getpid());
 
-    fflush(log_file);
+    int len = snprintf(entry, sizeof(entry), "%s|%s|SESSION_START|Decoy shell started\n",
+                       timestamp, session_id);
+    if (len > 0)
+    {
+        write(log_fd, entry, (size_t)len);
+        fsync(log_fd);
+    }
 }
 
-
-// Record an event
+// Record an event to the append-only log using POSIX write()
 void logger_log(const char *event, const char *details)
 {
     char timestamp[32];
     char safe_details[512];
+    char entry[1024];
 
-    if (log_file == NULL)
+    if (log_fd == -1)
     {
         return;
     }
 
-    get_timestamp(timestamp);
+    get_timestamp(timestamp, sizeof(timestamp));
 
-    snprintf(safe_details, sizeof(safe_details), "%s", details);
-
-    // Prevent log-field injection using separators or newlines
-    for (int i = 0; safe_details[i] != '\0'; i++)
+    // Sanitize log details to prevent delimiter injection
+    size_t i = 0;
+    while (details[i] != '\0' && i < sizeof(safe_details) - 1)
     {
-        if (safe_details[i] == '|' ||
-            safe_details[i] == '\n' ||
-            safe_details[i] == '\r')
+        char c = details[i];
+        if (c == '|' || c == '\n' || c == '\r')
         {
             safe_details[i] = ' ';
         }
+        else
+        {
+            safe_details[i] = c;
+        }
+        i++;
     }
+    safe_details[i] = '\0';
 
-    fprintf(log_file, "%s|%s|%s|%s\n",
-            timestamp, session_id, event, safe_details);
-
-    fflush(log_file);
+    int len = snprintf(entry, sizeof(entry), "%s|%s|%s|%s\n",
+                       timestamp, session_id, event, safe_details);
+    if (len > 0)
+    {
+        write(log_fd, entry, (size_t)len);
+        fsync(log_fd);
+    }
 }
 
-
-// End the session
+// End the session and close the file descriptor
 void logger_end(void)
 {
-    if (log_file == NULL)
+    if (log_fd == -1)
     {
         return;
     }
 
     char timestamp[32];
+    char entry[256];
 
-    get_timestamp(timestamp);
+    get_timestamp(timestamp, sizeof(timestamp));
 
-    fprintf(log_file,
-            "%s|%s|SESSION_END|Decoy shell closed\n",
-            timestamp, session_id);
+    int len = snprintf(entry, sizeof(entry), "%s|%s|SESSION_END|Decoy shell closed\n",
+                       timestamp, session_id);
+    if (len > 0)
+    {
+        write(log_fd, entry, (size_t)len);
+        fsync(log_fd);
+    }
 
-    fclose(log_file);
-
-    log_file = NULL;
+    close(log_fd);
+    log_fd = -1;
 }
-

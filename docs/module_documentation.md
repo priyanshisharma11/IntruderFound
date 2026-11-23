@@ -2,112 +2,85 @@
 
 ## 1. Introduction
 
-IntruderFound is an interactive command-line honeypot simulation developed using C programming and Bash scripting. It provides a simulated terminal environment to demonstrate command execution, virtual file management, suspicious command detection, session logging, and signal handling.
+IntruderFound is an interactive command-line honeypot simulation developed using C programming (POSIX/C11) and UNIX shell automation pipelines. It provides an authentic simulated POSIX terminal environment designed to trap unauthorized users, log telemetry silently, handle UNIX signals gracefully, simulate an in-memory virtual filesystem with inode metadata, and generate automated forensic analytics reports.
 
-The project is divided into different modules, each responsible for a specific functionality.
+## 2. Main Architecture & Virtual File System – `main.c`
 
-## 2. Main Module – main.c
+The main engine orchestrates the Read-Eval-Print Loop (REPL), signal checking, path resolution, and command dispatch.
 
-The main.c file controls the overall execution of the IntruderFound application.
+### In-Memory Virtual File System (VFS) with Inodes
+- **Inode Abstraction (`struct Inode`)**: Each virtual file and directory is represented by a simulated inode containing:
+  - `ino`: Unique inode identifier.
+  - `is_directory`: Directory vs regular file flag.
+  - `mode`: POSIX file permission bits (`mode_t`, e.g., `0755`, `0644`, `0600`).
+  - `owner` & `group`: Ownership attributes (e.g. `user123`, `root`).
+  - `size`: File size in bytes.
+  - `mtime`: Last modification timestamp.
+  - `content`: Buffer storing in-memory file data.
+- **Directory Hierarchy (`struct Node`)**: Links directory entries to their underlying inodes, supporting multi-level n-ary tree traversal.
+- **Path Resolution (`resolve_path`)**: Resolves multi-level relative and absolute paths, handling `/`, `~`, `.` (current directory), and `..` (parent directory).
+- **Supported Built-in Utilities**:
+  - `ls [-l|-la] [path]`: Supports both short and full POSIX formatted long listing (permissions, owner, group, size, date).
+  - `cd [path]`: Multi-level directory navigation.
+  - `pwd`: Absolute path calculation from the virtual root.
+  - `cat [path]`: Path-aware file reading.
+  - `echo [text] [> | >> [path]]`: In-memory redirection and appending with buffer safety.
+  - `touch [path]`: Creates files or updates inode modification times.
+  - `mkdir [path]`: Creates virtual directories with `0755` permissions.
+  - `rm [path]`: Removes virtual files.
+  - `cp [src] [dst]`: Copies files across directories.
+  - `mv [src] [dst]`: Moves or renames files.
+  - `whoami`, `id`, `uname [-a]`: System and identity emulation.
+  - `exit`: Clean session termination.
 
-Responsibilities:
-- Displays the welcome banner.
-- Initializes the virtual file system.
-- Starts session logging.
-- Initializes signal handling.
-- Accepts commands from the simulated user.
-- Processes commands through the shell.
-- Detects suspicious commands.
-- Ends the session when the user enters the exit command.
+## 3. Simulated VI Text Editor – `editor.c` & `editor.h`
 
-## 3. Editor Module – editor.c and editor.h
+Implements a modal text editor trap mimicking native `vi`/`vim`:
+- **Terminal Raw Mode (`termios.h`)**: Puts terminal into raw mode (`ICANON` and `ECHO` disabled) when connected to an interactive TTY.
+- **Real Modal Editing**:
+  - **NORMAL Mode**: Default mode; supports navigation, `i` to enter INSERT mode, and `:` to enter EX command mode.
+  - **INSERT Mode**: Interactive typing and character buffer insertion; backspace deletion.
+  - **Escape Key Handling**: Intercepts the actual ASCII Escape byte (`0x1B` / 27) to return to NORMAL mode.
+  - **EX Commands**: `:w` (save to inode), `:q` (quit), `:wq` (save and quit), `:q!` (quit without saving).
+- **Visual Interface**: Emits ANSI escape sequences to clear the screen, renders empty line tildes (`~`), and displays status indicators (`-- INSERT --`, status messages).
+- **Non-Interactive Fallback**: Fallback mode for headless automated test pipelines.
 
-The editor module implements a basic simulated VI text editor.
+## 4. Low-Level Audit Logger – `logger.c` & `logger.h`
 
-Responsibilities:
-- Opens a virtual file for editing.
-- Displays the existing file content.
-- Supports NORMAL MODE and INSERT MODE.
-- Allows users to enter text.
-- Supports save and quit commands.
-- Updates the virtual file content when saved.
+Implements append-only session telemetry using low-level POSIX system calls:
+- **POSIX System Calls**: Uses `open(..., O_WRONLY | O_CREAT | O_APPEND, 0644)`, `write()`, and `close()`.
+- **Durability**: Employs `fsync()` after each write to ensure disk persistence.
+- **Session Identification**: Unique session IDs constructed via `YYYYMMDD_HHMMSS_PID`.
+- **Telemetry Format**: `timestamp|session_id|event|details`.
+- **Sanitization**: Filters delimiter (`|`) and newline injection attacks.
 
-The editor supports commands such as i, ESC, :w, :q, :wq, and :q!.
+## 5. Security & Honeypot Deception Engine – `security.c` & `security.h`
 
-## 4. Logger Module – logger.c and logger.h
+Implements threat classification and authentic deception:
+- **Tokenized Parsing**: Parses command tokens cleanly, eliminating false positives on substring matches (e.g. `echo pseudo` or `cat notes.txt` are permitted without false alarms).
+- **Deception Without Revealing the Honeypot**: Rather than displaying warning banners that give away the honeypot, the engine silently logs the malicious event and returns genuine UNIX error messages:
+  - `sudo`: Prompts for a password without echo (`[sudo] password for user123:`) and rejects with an authentic auth failure (`sudo: 3 incorrect password attempts`).
+  - `su`: Prompts for password and reports `su: Authentication failure`.
+  - `chmod`: Returns `chmod: changing permissions of '...': Operation not permitted`.
+  - `chown` / `chgrp`: Returns `...: changing ownership of '...': Operation not permitted`.
+  - `passwd`: Simulates password prompt and fails with `passwd: Authentication token manipulation error`.
+  - `rm -rf /`: Simulates safety guard `rm: it is dangerous to operate recursively on '/'`.
+  - Sensitive files (`/etc/shadow`, `/etc/sudoers`, `/root`): Returns `Permission denied`.
+  - Package tools (`apt`, `yum`): Returns authentic lock failure (`Could not open lock file... are you root?`).
 
-The logger module records activities performed during a simulated session.
+## 6. Signal Interception Module – `signals.c` & `signals.h`
 
-Responsibilities:
-- Starts a new logging session.
-- Generates timestamps and session IDs.
-- Records executed commands.
-- Records suspicious activities and detected signals.
-- Ends the logging session.
+Uses POSIX `sigaction` to intercept terminal interrupt signals:
+- **SIGINT (Ctrl+C)**: Intercepted; prevents shell termination, logs event, and prints `^C` with a fresh prompt.
+- **SIGTSTP (Ctrl+Z)**: Intercepted; prevents process suspension, logs event, and preserves terminal state.
+- **SIGHUP (Hangup)**: Intercepted; logs session termination and closes file descriptors gracefully.
 
-The log entries use a structured format:
+## 7. Forensic Session Inspector Pipeline – `scripts/inspect.sh`
 
-timestamp|session_id|event|details
-
-The log file is stored in the logs directory.
-
-## 5. Security Module – security.c and security.h
-
-The security module detects potentially suspicious commands using predefined rules.
-
-Responsibilities:
-- Checks commands against suspicious patterns.
-- Identifies potentially dangerous command categories.
-- Generates security alerts.
-- Prevents detected suspicious commands from being processed by the simulated shell.
-
-Examples of monitored patterns include sudo, rm -rf, chmod, passwd, /etc/shadow, and chown.
-
-This module uses rule-based detection rather than advanced threat detection.
-
-## 6. Signal Handling Module – signals.c and signals.h
-
-The signal handling module detects selected POSIX signals.
-
-Signals handled:
-- SIGINT – Interrupt signal.
-- SIGTSTP – Terminal stop signal.
-- SIGHUP – Hangup signal.
-
-Responsibilities:
-- Registers signal handlers.
-- Detects incoming signals.
-- Stores pending signal information.
-- Allows the main program to process and log detected signals.
-
-The signal handler uses a signal-safe flag, while logging and message display are performed by the main program.
-
-## 7. Session Inspector – scripts/inspect.sh
-
-The inspect.sh file is a Bash script used to analyze the session log.
-
-Responsibilities:
-- Reads recorded session logs.
-- Counts total sessions and commands.
-- Identifies suspicious activities.
-- Summarizes signal events.
-- Displays session information.
-- Generates a session analysis report.
-
-The generated report is stored in reports/session_report.txt.
-
-## 8. Build System – Makefile
-
-The Makefile automates compilation and execution.
-
-Available targets:
-
-- make – Compiles the project.
-- make run – Builds and runs the application.
-- make inspect – Runs the session inspection script.
-- make clean – Removes the compiled executable.
-
-## 9. Conclusion
-
-The modular design of IntruderFound makes the project easier to understand, maintain, and extend. Each module performs a specific task, while the main module coordinates the complete application.
-
+Automated log analytics engine adhering to the UNIX philosophy:
+- **POSIX Signal Traps**: Uses `trap 'rm -f ...' EXIT INT TERM` for temporary file hygiene.
+- **Grep Filter**: Extracts and sanitizes valid telemetry entries.
+- **Sed Preprocessor**: Normalizes whitespace and fields.
+- **Awk Analytics**: Aggregates command frequency distributions, flags security events, and summarizes metrics.
+- **Session Duration Calculation**: Computes exact elapsed session times (`Xm Ys`) using POSIX date translation.
+- **Multi-Format Export**: Generates both plain text (`reports/session_report.txt`) and formatted GitHub Flavored Markdown (`reports/session_report.md`).
